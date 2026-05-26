@@ -1,0 +1,39 @@
+# Rust/Cargo
+/target/
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Soroban
+.soroban/
+
+# Build artifacts
+*.wasm
+*.wasm.gz
+
+# Logs
+*.log
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# Coverage reports
+tarpaulin-report.html
+lcov.info
+
+# Backup files
+*.bak
+*.backup
