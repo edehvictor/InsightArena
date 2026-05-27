@@ -13,6 +13,11 @@ pub const MAX_TEAM_NAME_LEN: u32 = 100;
 /// Required length for invite codes (characters)
 pub const INVITE_CODE_LEN: u32 = 8;
 
+/// Valid predicted outcome symbols
+pub const OUTCOME_TEAM_A: &str = "TEAM_A";
+pub const OUTCOME_TEAM_B: &str = "TEAM_B";
+pub const OUTCOME_DRAW: &str = "DRAW";
+
 // ---------------------------------------------------------------------------
 // MatchResult
 // ---------------------------------------------------------------------------
@@ -96,38 +101,77 @@ pub enum EventStatus {
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
-    /// Global contract configuration (token address, fee %, admin, …)
-    Config,
+    // ── Global admin / config keys ──────────────────────────────────────────
 
-    /// Global monotonic event counter → u64
-    EventCounter,
+    /// Contract administrator address
+    Admin(Address),
+
+    /// AI agent address authorised to submit match results
+    AIAgent(Address),
+
+    /// Treasury address that receives creation fees
+    Treasury(Address),
+
+    /// XLM creation fee in stroops (i128)
+    CreationFee(i128),
+
+    /// Emergency pause flag — when true, sensitive operations are halted
+    Paused(bool),
+
+    /// Native XLM token contract address
+    XLMToken(Address),
+
+    // ── Global counters ─────────────────────────────────────────────────────
+
+    /// Monotonically increasing event counter → u64
+    EventCounter(u64),
+
+    /// Monotonically increasing match counter → u64
+    MatchCounter(u64),
+
+    /// Monotonically increasing prediction counter → u64
+    PredictionCounter(u64),
+
+    // ── Core entity keys ────────────────────────────────────────────────────
 
     /// Core event data keyed by event_id
     Event(u64),
 
-    /// Per-event match counter → u64  (event_id)
-    MatchCounter(u64),
+    /// Individual match keyed by match_id
+    Match(u64),
 
-    /// Individual match keyed by (event_id, match_id)
-    Match(u64, u64),
+    /// A user's prediction keyed by prediction_id
+    Prediction(u64),
 
-    /// A user's prediction for a specific match  (event_id, match_id, predictor)
-    Prediction(u64, u64, Address),
+    // ── Relationship / index keys ────────────────────────────────────────────
 
-    /// All event_ids a user has joined  (user) → Vec<u64>
-    UserEvents(Address),
+    /// Vec<u64> of match IDs belonging to an event  (event_id)
+    EventMatches(u64),
 
-    /// All participant addresses for an event  (event_id) → Vec<Address>
+    /// Vec<u64> of prediction IDs for a match  (match_id)
+    MatchPredictions(u64),
+
+    /// Vec<u64> of prediction IDs a user has placed in an event  (user, event_id)
+    UserPredictions(Address, u64),
+
+    /// Vec<Address> of participants for an event  (event_id)
     EventParticipants(u64),
+
+    /// Vec<Winner> of verified winners for an event  (event_id)
+    EventWinners(u64),
+
+    // ── Access / invite keys ─────────────────────────────────────────────────
+
+    /// Whether an address has passed KYC / verification  (address) → bool
+    VerifiedAddresses(Address),
 
     /// Invite code → event_id mapping  (8-char Symbol)
     InviteCode(Symbol),
 
-    /// Whether an address has passed KYC / verification
-    VerifiedAddress(Address),
+    // ── Legacy / compatibility keys ──────────────────────────────────────────
 
-    /// Verified winners for an event  (event_id) → Vec<Winner>
-    Winners(u64),
+    /// Global contract configuration singleton
+    Config,
 
     /// Running XLM balance held by the contract treasury
     TreasuryBalance,
@@ -267,6 +311,16 @@ impl Event {
         }
         Ok(())
     }
+
+    /// Returns true when the title length is within the 200-character limit.
+    pub fn is_valid_title(title: &String) -> bool {
+        title.len() <= MAX_TITLE_LEN
+    }
+
+    /// Returns true when the description length is within the 1000-character limit.
+    pub fn is_valid_description(description: &String) -> bool {
+        description.len() <= MAX_DESCRIPTION_LEN
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -275,11 +329,11 @@ impl Event {
 
 /// A single prediction match within an event.
 ///
-/// Stored under `DataKey::Match(event_id, match_id)`.
+/// Stored under `DataKey::Match(match_id)`.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Match {
-    /// Unique identifier scoped to the parent event
+    /// Unique identifier (global, assigned via MatchCounter)
     pub match_id: u64,
 
     /// ID of the parent event
@@ -442,7 +496,6 @@ impl Match {
             if self.submitted_at.is_none() {
                 return Err("Result submitted but submitted_at is None");
             }
-            // Validate the encoded value is a legal outcome
             if let Some(v) = self.winning_team {
                 if v > 2 {
                     return Err("winning_team value must be 0 (TeamA), 1 (TeamB), or 2 (Draw)");
@@ -467,22 +520,27 @@ impl Match {
 
 /// A user's prediction for a single match inside an event.
 ///
-/// Stored under `DataKey::Prediction(event_id, match_id, predictor)`.
+/// Stored under `DataKey::Prediction(prediction_id)`.
+///
+/// The `predicted_outcome` field uses a `Symbol` with one of three values:
+/// `"TEAM_A"`, `"TEAM_B"`, or `"DRAW"` (see `OUTCOME_*` constants).
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Prediction {
-    /// Address of the user who placed this prediction
-    pub predictor: Address,
-
-    /// Parent event identifier
-    pub event_id: u64,
+    /// Global unique identifier assigned via PredictionCounter
+    pub prediction_id: u64,
 
     /// Match this prediction is for
     pub match_id: u64,
 
-    /// Predicted outcome: 0 = Team A, 1 = Team B, 2 = Draw.
-    /// Stored as `u32` because Soroban's `#[contracttype]` does not support `u8`.
-    pub predicted_winner: u32,
+    /// Parent event identifier
+    pub event_id: u64,
+
+    /// Address of the user who placed this prediction
+    pub predictor: Address,
+
+    /// Predicted outcome: Symbol of "TEAM_A", "TEAM_B", or "DRAW"
+    pub predicted_outcome: Symbol,
 
     /// Unix timestamp when the prediction was submitted
     pub predicted_at: u64,
@@ -494,25 +552,42 @@ pub struct Prediction {
 impl Prediction {
     /// Create a new ungraded prediction.
     pub fn new(
-        predictor: Address,
-        event_id: u64,
+        prediction_id: u64,
         match_id: u64,
-        predicted_winner: u32,
+        event_id: u64,
+        predictor: Address,
+        predicted_outcome: Symbol,
         predicted_at: u64,
     ) -> Self {
         Self {
-            predictor,
-            event_id,
+            prediction_id,
             match_id,
-            predicted_winner,
+            event_id,
+            predictor,
+            predicted_outcome,
             predicted_at,
             is_correct: None,
         }
     }
 
-    /// Grade this prediction against the actual match result.
-    pub fn grade(&mut self, actual_result: &MatchResult) {
-        self.is_correct = Some(self.predicted_winner == actual_result.to_u32());
+    /// Validate that `predicted_outcome` is one of the three legal symbols.
+    ///
+    /// Valid values: `"TEAM_A"`, `"TEAM_B"`, `"DRAW"`.
+    pub fn validate_outcome(env: &soroban_sdk::Env, outcome: &Symbol) -> Result<(), &'static str> {
+        let team_a = Symbol::new(env, OUTCOME_TEAM_A);
+        let team_b = Symbol::new(env, OUTCOME_TEAM_B);
+        let draw = Symbol::new(env, OUTCOME_DRAW);
+
+        if *outcome == team_a || *outcome == team_b || *outcome == draw {
+            Ok(())
+        } else {
+            Err("predicted_outcome must be TEAM_A, TEAM_B, or DRAW")
+        }
+    }
+
+    /// Grade this prediction against the actual match result symbol.
+    pub fn grade(&mut self, actual_outcome: &Symbol) {
+        self.is_correct = Some(self.predicted_outcome == *actual_outcome);
     }
 
     /// `true` if the prediction has been graded and was correct.
@@ -520,12 +595,11 @@ impl Prediction {
         self.is_correct == Some(true)
     }
 
-    /// Validate that `predicted_winner` encodes a legal outcome (0, 1, or 2).
-    pub fn validate(&self) -> Result<(), &'static str> {
-        if self.predicted_winner > 2 {
-            return Err("predicted_winner must be 0 (Team A), 1 (Team B), or 2 (Draw)");
-        }
-        Ok(())
+    /// Returns `true` if `predicted_at` is strictly before `match_time`.
+    ///
+    /// Used to verify the prediction was placed before the match started.
+    pub fn is_before_match_time(&self, match_time: u64) -> bool {
+        self.predicted_at < match_time
     }
 }
 
@@ -533,22 +607,30 @@ impl Prediction {
 // Winner
 // ---------------------------------------------------------------------------
 
-/// Records a user who correctly predicted every match in an event.
+/// Records a user who correctly predicted matches in an event.
 ///
-/// Stored inside the `Vec<Winner>` at `DataKey::Winners(event_id)`.
+/// Stored inside the `Vec<Winner>` at `DataKey::EventWinners(event_id)`.
+/// Used for leaderboard ranking and reward distribution.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Winner {
     /// Address of the winning predictor
     pub user: Address,
 
-    /// Event they won
+    /// Event they participated in
     pub event_id: u64,
 
-    /// How many matches they predicted correctly (should equal event.match_count)
-    pub total_correct_predictions: u32,
+    /// How many matches they predicted correctly
+    pub total_correct: u32,
 
-    /// Unix timestamp when the win was verified on-chain
+    /// Total number of matches in the event (denominator for accuracy)
+    pub total_matches: u32,
+
+    /// Unix timestamp when the user submitted their last prediction
+    /// (used as tiebreaker — earlier completion ranks higher)
+    pub completion_time: u64,
+
+    /// Unix timestamp when winner status was verified on-chain
     pub verified_at: u64,
 }
 
@@ -557,20 +639,46 @@ impl Winner {
     pub fn new(
         user: Address,
         event_id: u64,
-        total_correct_predictions: u32,
+        total_correct: u32,
+        total_matches: u32,
+        completion_time: u64,
         verified_at: u64,
     ) -> Self {
         Self {
             user,
             event_id,
-            total_correct_predictions,
+            total_correct,
+            total_matches,
+            completion_time,
             verified_at,
         }
+    }
+
+    /// Returns accuracy as an integer percentage in the range [0, 100].
+    ///
+    /// Returns 0 when `total_matches` is 0 to avoid division by zero.
+    pub fn get_accuracy_percentage(&self) -> u32 {
+        if self.total_matches == 0 {
+            return 0;
+        }
+        (self.total_correct * 100) / self.total_matches
+    }
+
+    /// Returns `true` if this winner outranks `other` for leaderboard purposes.
+    ///
+    /// Primary sort: higher `total_correct` wins.
+    /// Tiebreaker: earlier `completion_time` wins (submitted predictions sooner).
+    pub fn outranks(&self, other: &Winner) -> bool {
+        if self.total_correct != other.total_correct {
+            return self.total_correct > other.total_correct;
+        }
+        // Earlier completion time is better (lower value = higher rank)
+        self.completion_time < other.completion_time
     }
 }
 
 // ---------------------------------------------------------------------------
-// EventMetadata  (unchanged — kept for backward compatibility)
+// EventMetadata  (kept for backward compatibility)
 // ---------------------------------------------------------------------------
 
 /// Extended metadata stored separately from the core `Event` to keep the
