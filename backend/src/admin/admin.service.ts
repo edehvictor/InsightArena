@@ -23,7 +23,11 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { Prediction } from '../predictions/entities/prediction.entity';
 import { SorobanService } from '../soroban/soroban.service';
 import { User } from '../users/entities/user.entity';
+import { CreatorEvent } from '../matches/entities/creator-event.entity';
+import { FeeHistory } from '../indexer/entities/fee-history.entity';
 import { ActivityLogQueryDto } from './dto/activity-log-query.dto';
+import { DateRangeQueryDto } from './dto/date-range-query.dto';
+import { FeeStatsResponseDto } from './dto/fee-stats-response.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import {
   ReportFormat,
@@ -55,6 +59,10 @@ export class AdminService {
     private readonly activityLogsRepository: Repository<ActivityLog>,
     @InjectRepository(Flag)
     private readonly flagsRepository: Repository<Flag>,
+    @InjectRepository(CreatorEvent)
+    private readonly creatorEventRepository: Repository<CreatorEvent>,
+    @InjectRepository(FeeHistory)
+    private readonly feeHistoryRepository: Repository<FeeHistory>,
     private readonly analyticsService: AnalyticsService,
     private readonly notificationsService: NotificationsService,
     private readonly sorobanService: SorobanService,
@@ -116,6 +124,89 @@ export class AdminService {
       platform_revenue_stroops,
       pending_flags,
     };
+  }
+
+  async getFeeStats(range: DateRangeQueryDto): Promise<FeeStatsResponseDto> {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const eventQb = this.creatorEventRepository.createQueryBuilder('event');
+    const countQb = this.creatorEventRepository.createQueryBuilder('event');
+
+    if (range.start_date) {
+      eventQb.andWhere('event.on_chain_created_at >= :startDate', {
+        startDate: new Date(range.start_date),
+      });
+      countQb.andWhere('event.on_chain_created_at >= :startDate', {
+        startDate: new Date(range.start_date),
+      });
+    }
+    if (range.end_date) {
+      eventQb.andWhere('event.on_chain_created_at <= :endDate', {
+        endDate: new Date(range.end_date),
+      });
+      countQb.andWhere('event.on_chain_created_at <= :endDate', {
+        endDate: new Date(range.end_date),
+      });
+    }
+
+    const totalEvents = await countQb.getCount();
+
+    const totalFeeResult = (await eventQb
+      .select('SUM(CAST(event.creation_fee_paid AS DECIMAL))', 'total')
+      .getRawOne()) as { total: string | null };
+    const totalFees = totalFeeResult?.total || '0';
+
+    const monthFeeResult = (await this.creatorEventRepository
+      .createQueryBuilder('event')
+      .select('SUM(CAST(event.creation_fee_paid AS DECIMAL))', 'total')
+      .where('event.on_chain_created_at >= :startOfMonth', { startOfMonth })
+      .getRawOne()) as { total: string | null };
+    const monthFees = monthFeeResult?.total || '0';
+
+    const weekFeeResult = (await this.creatorEventRepository
+      .createQueryBuilder('event')
+      .select('SUM(CAST(event.creation_fee_paid AS DECIMAL))', 'total')
+      .where('event.on_chain_created_at >= :startOfWeek', { startOfWeek })
+      .getRawOne()) as { total: string | null };
+    const weekFees = weekFeeResult?.total || '0';
+
+    const avgFee =
+      totalEvents > 0
+        ? (BigInt(totalFees.split('.')[0]) / BigInt(totalEvents)).toString()
+        : '0';
+
+    const feeHistory = await this.feeHistoryRepository.find({
+      order: { created_at: 'DESC' },
+      take: 10,
+    });
+
+    return {
+      current_creation_fee: await this.getCurrentCreationFee(),
+      total_fees_collected: totalFees,
+      fees_collected_this_month: monthFees,
+      fees_collected_this_week: weekFees,
+      total_events_created: totalEvents,
+      average_fee_per_event: avgFee,
+      treasury_balance: totalFees,
+      fee_history: feeHistory,
+    };
+  }
+
+  private async getCurrentCreationFee(): Promise<string> {
+    try {
+      return await this.sorobanService.getCreationFee();
+    } catch {
+      // Fallback to last fee from history
+    }
+
+    const lastFee = await this.feeHistoryRepository.findOne({
+      order: { created_at: 'DESC' },
+    });
+    return lastFee?.new_fee_stroops ?? '10000000'; // Default 0.01 XLM
   }
 
   async listUsers(query: ListUsersQueryDto) {

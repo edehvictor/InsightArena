@@ -21,7 +21,9 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d data-source.ts",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d data-source.ts",
-    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d data-source.ts"
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d data-source.ts",
+    "seed": "ts-node -r tsconfig-paths/register src/database/seeds/seed.ts",
+    "db:reset": "ts-node -r tsconfig-paths/register src/database/seeds/reset.ts"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",

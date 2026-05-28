@@ -5,11 +5,13 @@ import {
   Query,
   UseGuards,
   UseInterceptors,
+  ValidationPipe,
 } from '@nestjs/common';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import {
   ApiBearerAuth,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -17,35 +19,52 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { Public } from '../common/decorators/public.decorator';
 import { CreatorEventsService } from './creator-events.service';
+import { EventByCodeResponseDto } from './dto/event-by-code-response.dto';
+import { ListMatchesQueryDto } from './dto/list-matches-query.dto';
 import { ListParticipantsQueryDto } from './dto/list-participants-query.dto';
-import { ListEventsQueryDto } from './dto/list-events-query.dto';
-import { UserEventsQueryDto } from './dto/user-events-query.dto';
-import { PaginatedEventsResponseDto } from './dto/event-response.dto';
-import { PaginatedUserEventsResponseDto } from './dto/user-event-response.dto';
+import { SearchEventsQueryDto } from './dto/search-events-query.dto';
+import { SearchEventsResponseDto } from './dto/search-events-response.dto';
+import { UserScoreResponseDto } from './dto/user-score-response.dto';
 
 @ApiTags('creator-events')
 @Controller('creator-events')
 export class CreatorEventsController {
-  constructor(private readonly creatorEventsService: CreatorEventsService) {}
+  constructor(private readonly creatorEventsService: CreatorEventsService) { }
 
   /**
-   * GET /api/creator-events
-   * #723 — Fetch all creator events with pagination, filtering, and sorting.
+   * GET /api/creator-events/search
+   * #757 - Search creator events with relevance ranking and highlights.
    */
-  @Get()
+  @Get('search')
   @UseInterceptors(CacheInterceptor)
-  @CacheTTL(300) // 5 minutes
-  @ApiOperation({
-    summary: 'Get all creator events with pagination and filtering',
+  @CacheTTL(120) // 2 minutes
+  @ApiOperation({ summary: 'Search creator events' })
+  @ApiQuery({
+    name: 'q',
+    required: true,
+    description:
+      'Search query matched against event title, description, and creator address',
   })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 20 })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['active', 'cancelled', 'inactive', 'all'],
+  })
+  @ApiQuery({ name: 'creator', required: false })
   @ApiResponse({
     status: 200,
-    description: 'Paginated list of events',
-    type: PaginatedEventsResponseDto,
+    description: 'Ranked creator event search results',
+    type: SearchEventsResponseDto,
   })
-  getAllEvents(@Query() query: ListEventsQueryDto) {
-    return this.creatorEventsService.getAllEvents(query);
+  searchEvents(
+    @Query(new ValidationPipe({ transform: true, whitelist: true }))
+    query: SearchEventsQueryDto,
+  ) {
+    return this.creatorEventsService.searchEvents(query);
   }
 
   /**
@@ -81,23 +100,68 @@ export class CreatorEventsController {
   }
 
   /**
-   * GET /api/creator-events/user/:address
-   * #726 — Fetch all events a user has joined or created.
+   * GET /api/creator-events/:id/matches
+   * #728 — Fetch all matches for an event with filtering and sorting.
    */
-  @Get('user/:address')
+  @Get(':id/matches')
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(60) // 1 minute
-  @ApiOperation({ summary: 'Get user events (joined or created)' })
+  @ApiOperation({ summary: 'Get event matches with filtering and sorting' })
+  @ApiResponse({ status: 200, description: 'List of matches' })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  getEventMatches(
+    @Param('id') id: string,
+    @Query() query: ListMatchesQueryDto,
+  ) {
+    return this.creatorEventsService.getEventMatches(id, query);
+  }
+
+  /**
+   * GET /api/creator-events/:id/score/:address
+   * #733 — Fetch user score for an event.
+   */
+  @Get(':id/score/:address')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(30) // 30 seconds
+  @ApiOperation({ summary: 'Get user score for an event' })
   @ApiResponse({
     status: 200,
-    description: 'Paginated list of user events',
-    type: PaginatedUserEventsResponseDto,
+    description: 'User score details',
+    type: UserScoreResponseDto,
   })
-  getUserEvents(
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  getUserScore(
+    @Param('id') id: string,
     @Param('address') address: string,
-    @Query() query: UserEventsQueryDto,
-  ) {
-    return this.creatorEventsService.getUserEvents(address, query);
+  ): Promise<UserScoreResponseDto> {
+    return this.creatorEventsService.getUserScore(id, address);
+  }
+}
+
+@ApiTags('creator-events')
+@Controller('creator-events')
+export class PublicCreatorEventsController {
+  constructor(private readonly creatorEventsService: CreatorEventsService) { }
+
+  /**
+   * GET /api/creator-events/invite/:code
+   * #725 — Fetch event by invite code for public landing page.
+   */
+  @Public()
+  @Get('invite/:code')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(300) // 5 minutes
+  @ApiOperation({ summary: 'Get event by invite code' })
+  @ApiResponse({
+    status: 200,
+    description: 'Event details',
+    type: EventByCodeResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  getEventByInviteCode(
+    @Param('code') code: string,
+  ): Promise<EventByCodeResponseDto> {
+    return this.creatorEventsService.getEventByInviteCode(code);
   }
 }
 
@@ -107,7 +171,7 @@ export class CreatorEventsController {
 @Roles(Role.Admin)
 @ApiBearerAuth()
 export class AdminCreatorEventsController {
-  constructor(private readonly creatorEventsService: CreatorEventsService) {}
+  constructor(private readonly creatorEventsService: CreatorEventsService) { }
 
   /**
    * GET /api/admin/creator-events/config

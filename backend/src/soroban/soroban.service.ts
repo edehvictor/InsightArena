@@ -79,6 +79,12 @@ export class SorobanService {
     return this.rpcServer;
   }
 
+  async getCreationFee(): Promise<string> {
+    return this.withSorobanErrorHandling('getCreationFee', () => {
+      return Promise.resolve('10000000'); // Default 0.01 XLM
+    });
+  }
+
   async testConnection(): Promise<boolean> {
     return this.withSorobanErrorHandling('testConnection', async () => {
       await this.rpcServer.getHealth();

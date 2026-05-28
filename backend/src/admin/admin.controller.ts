@@ -24,6 +24,8 @@ import { ResolveFlagDto } from '../flags/dto/resolve-flag.dto';
 import { AdminService } from './admin.service';
 import { ActivityLogQueryDto } from './dto/activity-log-query.dto';
 import { BanUserDto } from './dto/ban-user.dto';
+import { DateRangeQueryDto } from './dto/date-range-query.dto';
+import { FeeStatsResponseDto } from './dto/fee-stats-response.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { ModerateCommentDto } from './dto/moderate-comment.dto';
 import { ReportQueryDto, ReportFormat } from './dto/report-query.dto';
@@ -43,6 +45,22 @@ export class AdminController {
   @CacheTTL(60) // 1 minute
   async getDashboardStats(): Promise<StatsResponseDto> {
     return this.adminService.getStats();
+  }
+
+  @Get('creator-events/fees')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(300)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get fee collection statistics' })
+  @ApiResponse({
+    status: 200,
+    description: 'Fee statistics',
+    type: FeeStatsResponseDto,
+  })
+  async getFeeStats(
+    @Query() query: DateRangeQueryDto,
+  ): Promise<FeeStatsResponseDto> {
+    return this.adminService.getFeeStats(query);
   }
 
   @Delete('competitions/:id')

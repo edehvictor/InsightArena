@@ -2,86 +2,36 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CacheModule } from '@nestjs/cache-manager';
 import {
   CreatorEventsController,
-  AdminCreatorEventsController,
+  PublicCreatorEventsController,
 } from './creator-events.controller';
 import { CreatorEventsService } from './creator-events.service';
 import {
-  ListEventsQueryDto,
-  EventStatus,
-  EventSortBy,
-} from './dto/list-events-query.dto';
-import { UserEventsQueryDto, UserEventType } from './dto/user-events-query.dto';
-import {
-  ListParticipantsQueryDto,
-  ParticipantSortBy,
+  ListMatchesQueryDto,
+  MatchStatus,
+  MatchSortBy,
   SortOrder,
-} from './dto/list-participants-query.dto';
+} from './dto/list-matches-query.dto';
+import { EventByCodeResponseDto } from './dto/event-by-code-response.dto';
+import { UserScoreResponseDto } from './dto/user-score-response.dto';
 
 describe('CreatorEventsController', () => {
   let controller: CreatorEventsController;
   let service: jest.Mocked<CreatorEventsService>;
 
-  const mockEnrichedEvent = {
-    eventId: 'event-1',
-    inviteCode: 'code-123',
-    creator: 'creator-address',
-    title: 'Test Event',
-    description: 'Test Description',
-    startTime: 1000000,
-    endTime: 2000000,
-    maxParticipants: 100,
-    participantCount: 50,
-    isActive: true,
-    matchCount: 2,
-    matchPreview: [
-      { matchId: 'match-1', homeTeam: 'Team A', awayTeam: 'Team B' },
-      { matchId: 'match-2', homeTeam: 'Team C', awayTeam: 'Team D' },
-    ],
-    winnerCount: 2,
-    creatorVerified: true,
-  };
-
-  const mockPaginatedEvents = {
-    data: [mockEnrichedEvent],
-    total: 1,
-    page: 1,
-    limit: 20,
-    totalPages: 1,
-  };
-
-  const mockParticipants = {
-    data: [
-      {
-        address: 'user-1',
-        joinedAt: 1000000,
-        totalPredictions: 5,
-        correctPredictions: 3,
-        accuracyPct: 60,
-        rank: 1,
-      },
-    ],
-    total: 1,
-    page: 1,
-    limit: 20,
-    totalPages: 1,
-  };
-
   beforeEach(async () => {
-    const mockCreatorEventsService = {
-      getEventById: jest.fn(),
-      getParticipants: jest.fn(),
-      getAllEvents: jest.fn(),
-      getUserEvents: jest.fn(),
-      getContractConfig: jest.fn(),
-    };
-
     const module: TestingModule = await Test.createTestingModule({
       imports: [CacheModule.register()],
-      controllers: [CreatorEventsController, AdminCreatorEventsController],
+      controllers: [CreatorEventsController],
       providers: [
         {
           provide: CreatorEventsService,
-          useValue: mockCreatorEventsService,
+          useValue: {
+            getEventById: jest.fn(),
+            getParticipants: jest.fn(),
+            getEventMatches: jest.fn(),
+            getUserScore: jest.fn(),
+            getContractConfig: jest.fn(),
+          },
         },
       ],
     }).compile();
@@ -90,149 +40,167 @@ describe('CreatorEventsController', () => {
     service = module.get(CreatorEventsService);
   });
 
-  describe('getAllEvents', () => {
-    it('should return paginated events', async () => {
-      service.getAllEvents.mockResolvedValue(mockPaginatedEvents);
-
-      const query: ListEventsQueryDto = {
-        page: 1,
-        limit: 20,
-        status: EventStatus.All,
-        sortBy: EventSortBy.CreatedAt,
-        sortOrder: SortOrder.Desc,
-      };
-
-      const result = await controller.getAllEvents(query);
-
-      expect(result).toEqual(mockPaginatedEvents);
-      expect(service.getAllEvents).toHaveBeenCalledWith(query);
-    });
-
-    it('should accept filter parameters', async () => {
-      service.getAllEvents.mockResolvedValue(mockPaginatedEvents);
-
-      const query: ListEventsQueryDto = {
-        page: 1,
-        limit: 50,
-        status: EventStatus.Active,
-        creator: 'creator-address',
-        search: 'test',
-        sortBy: EventSortBy.ParticipantCount,
+  describe('getEventMatches', () => {
+    it('should call service with correct parameters', async () => {
+      const query: ListMatchesQueryDto = {
+        status: MatchStatus.All,
+        sortBy: MatchSortBy.MatchTime,
         sortOrder: SortOrder.Asc,
       };
 
-      await controller.getAllEvents(query);
+      service.getEventMatches.mockResolvedValue([]);
 
-      expect(service.getAllEvents).toHaveBeenCalledWith(query);
+      await controller.getEventMatches('event-1', query);
+
+      expect(service.getEventMatches).toHaveBeenCalledWith('event-1', query);
+    });
+
+    it('should return matches from service', async () => {
+      const mockMatches = [
+        {
+          matchId: 'match-1',
+          eventId: 'event-1',
+          homeTeam: 'Team A',
+          awayTeam: 'Team B',
+          startTime: 1100000,
+          resolved: false,
+          outcome: null,
+          predictionCount: 10,
+        },
+      ];
+
+      const query: ListMatchesQueryDto = {
+        status: MatchStatus.All,
+        sortBy: MatchSortBy.MatchTime,
+        sortOrder: SortOrder.Asc,
+      };
+
+      service.getEventMatches.mockResolvedValue(mockMatches);
+
+      const result = await controller.getEventMatches('event-1', query);
+
+      expect(result).toEqual(mockMatches);
     });
   });
 
-  describe('getEvent', () => {
-    it('should return event by ID', async () => {
-      service.getEventById.mockResolvedValue(mockEnrichedEvent);
-
-      const result = await controller.getEvent('event-1');
-
-      expect(result).toEqual(mockEnrichedEvent);
-      expect(service.getEventById).toHaveBeenCalledWith('event-1');
-    });
-  });
-
-  describe('getParticipants', () => {
-    it('should return paginated participants', async () => {
-      service.getParticipants.mockResolvedValue(mockParticipants);
-
-      const query: ListParticipantsQueryDto = {
-        page: 1,
-        limit: 20,
-        sortBy: ParticipantSortBy.JoinedAt,
-        sortOrder: SortOrder.Desc,
+  describe('getUserScore', () => {
+    it('should call service with correct parameters', async () => {
+      const mockScore: UserScoreResponseDto = {
+        address: 'GUSER1',
+        totalMatches: 10,
+        totalPredictions: 8,
+        correctPredictions: 6,
+        incorrectPredictions: 2,
+        pendingPredictions: 0,
+        accuracyPercentage: 75,
+        rank: 1,
+        isWinner: false,
       };
 
-      const result = await controller.getParticipants('event-1', query);
+      service.getUserScore.mockResolvedValue(mockScore);
 
-      expect(result).toEqual(mockParticipants);
-      expect(service.getParticipants).toHaveBeenCalledWith('event-1', query);
-    });
-  });
+      await controller.getUserScore('event-1', 'GUSER1');
 
-  describe('getUserEvents', () => {
-    it('should return user events', async () => {
-      service.getUserEvents.mockResolvedValue(mockPaginatedEvents);
-
-      const query: UserEventsQueryDto = {
-        type: UserEventType.All,
-        status: EventStatus.All,
-        page: 1,
-        limit: 20,
-      };
-
-      const result = await controller.getUserEvents('user-address', query);
-
-      expect(result).toEqual(mockPaginatedEvents);
-      expect(service.getUserEvents).toHaveBeenCalledWith('user-address', query);
+      expect(service.getUserScore).toHaveBeenCalledWith('event-1', 'GUSER1');
     });
 
-    it('should accept type and status filters', async () => {
-      service.getUserEvents.mockResolvedValue(mockPaginatedEvents);
-
-      const query: UserEventsQueryDto = {
-        type: UserEventType.Joined,
-        status: EventStatus.Active,
-        page: 1,
-        limit: 20,
+    it('should return user score from service', async () => {
+      const mockScore: UserScoreResponseDto = {
+        address: 'GUSER1',
+        totalMatches: 10,
+        totalPredictions: 8,
+        correctPredictions: 6,
+        incorrectPredictions: 2,
+        pendingPredictions: 0,
+        accuracyPercentage: 75,
+        rank: 1,
+        isWinner: false,
       };
 
-      await controller.getUserEvents('user-address', query);
+      service.getUserScore.mockResolvedValue(mockScore);
 
-      expect(service.getUserEvents).toHaveBeenCalledWith('user-address', query);
+      const result = await controller.getUserScore('event-1', 'GUSER1');
+
+      expect(result).toEqual(mockScore);
     });
   });
 });
 
-describe('AdminCreatorEventsController', () => {
-  let controller: AdminCreatorEventsController;
+describe('PublicCreatorEventsController', () => {
+  let controller: PublicCreatorEventsController;
   let service: jest.Mocked<CreatorEventsService>;
 
-  const mockConfig = {
-    admin: 'admin-address',
-    aiAgent: 'ai-agent-address',
-    treasury: 'treasury-address',
-    celoToken: 'celo-token-address',
-    creationFee: '1000',
-    paused: false,
-  };
-
   beforeEach(async () => {
-    const mockCreatorEventsService = {
-      getContractConfig: jest.fn(),
-    };
-
     const module: TestingModule = await Test.createTestingModule({
       imports: [CacheModule.register()],
-      controllers: [AdminCreatorEventsController],
+      controllers: [PublicCreatorEventsController],
       providers: [
         {
           provide: CreatorEventsService,
-          useValue: mockCreatorEventsService,
+          useValue: {
+            getEventByInviteCode: jest.fn(),
+          },
         },
       ],
     }).compile();
 
-    controller = module.get<AdminCreatorEventsController>(
-      AdminCreatorEventsController,
+    controller = module.get<PublicCreatorEventsController>(
+      PublicCreatorEventsController,
     );
     service = module.get(CreatorEventsService);
   });
 
-  describe('getConfig', () => {
-    it('should return contract configuration', async () => {
-      service.getContractConfig.mockResolvedValue(mockConfig);
+  describe('getEventByInviteCode', () => {
+    it('should call service with correct code', async () => {
+      const mockEvent: EventByCodeResponseDto = {
+        eventId: 'event-1',
+        title: 'Test Event',
+        description: 'Test Description',
+        creator: 'GCREATOR',
+        participantCount: 50,
+        maxParticipants: 100,
+        matchCount: 10,
+        status: 'active',
+        matchPreview: [],
+        startTime: 1000000,
+        endTime: 2000000,
+      };
 
-      const result = await controller.getConfig();
+      service.getEventByInviteCode.mockResolvedValue(mockEvent);
 
-      expect(result).toEqual(mockConfig);
-      expect(service.getContractConfig).toHaveBeenCalled();
+      await controller.getEventByInviteCode('ABC123');
+
+      expect(service.getEventByInviteCode).toHaveBeenCalledWith('ABC123');
+    });
+
+    it('should return event details from service', async () => {
+      const mockEvent: EventByCodeResponseDto = {
+        eventId: 'event-1',
+        title: 'Test Event',
+        description: 'Test Description',
+        creator: 'GCREATOR',
+        participantCount: 50,
+        maxParticipants: 100,
+        matchCount: 10,
+        status: 'active',
+        matchPreview: [
+          {
+            matchId: 'match-1',
+            homeTeam: 'Team A',
+            awayTeam: 'Team B',
+            startTime: 1100000,
+          },
+        ],
+        startTime: 1000000,
+        endTime: 2000000,
+      };
+
+      service.getEventByInviteCode.mockResolvedValue(mockEvent);
+
+      const result = await controller.getEventByInviteCode('ABC123');
+
+      expect(result).toEqual(mockEvent);
+      expect(result.matchPreview).toHaveLength(1);
     });
   });
 });
