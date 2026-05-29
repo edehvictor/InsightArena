@@ -16,18 +16,51 @@ interface Transaction {
   status: TxStatus;
 }
 
+function getSeedFromAddress(address: string): number {
+  let seed = 0;
+  for (let i = 0; i < address.length; i++) {
+    seed += address.charCodeAt(i); // Adds up the computer code value of each letter
+  }
+  return seed;
+}
 const PLACEHOLDER_ADDRESS = "GDQP2KPQGKIHYJGXNUIYOMHARUARCA7DJT5FO2FFOOKY3B2WSQHG4W37";
 
-const TRANSACTIONS: Transaction[] = [
-  { id: "1", date: "2025-06-10", type: "Stake", description: "Will XLM close above $0.25?", amount: "-50 XLM", status: "Confirmed" },
-  { id: "2", date: "2025-06-09", type: "Payout", description: "BTC above $80k — YES won", amount: "+120 XLM", status: "Confirmed" },
-  { id: "3", date: "2025-06-08", type: "Stake", description: "Argentina wins Copa América?", amount: "-30 XLM", status: "Confirmed" },
-  { id: "4", date: "2025-06-07", type: "Refund", description: "Ethereum ETF — Market Cancelled", amount: "+30 XLM", status: "Confirmed" },
-  { id: "5", date: "2025-06-06", type: "Season Reward", description: "Season 7 top-100 finish", amount: "+200 XLM", status: "Confirmed" },
-  { id: "6", date: "2025-06-05", type: "Stake", description: "US Fed rate cut Sept?", amount: "-25 XLM", status: "Pending" },
-  { id: "7", date: "2025-06-04", type: "Payout", description: "GPT-5 before July — YES won", amount: "+60 XLM", status: "Confirmed" },
-  { id: "8", date: "2025-06-03", type: "Stake", description: "OpenAI GPT-5 release", amount: "-40 XLM", status: "Confirmed" },
+const baseSeed = getSeedFromAddress(PLACEHOLDER_ADDRESS);
+
+const marketPool = [
+  "Will XLM close above $0.25?",
+  "BTC above $80k — YES won",
+  "Argentina wins Copa América?",
+  "Ethereum ETF — Market Cancelled",
+  "Solana active accounts cross 5M",
+  "Stellar Soroban upgrade mainnet deployment"
 ];
+
+const transactionTypes: TxType[] = ["Stake", "Payout", "Stake", "Refund"];
+
+const TRANSACTIONS: Transaction[] = Array.from({ length: 8 }).map((_, index) => {
+  const itemSeed = baseSeed + (index * 47);
+  const type = transactionTypes[itemSeed % transactionTypes.length];
+  const description = marketPool[itemSeed % marketPool.length];
+  
+  let amountValue = "";
+  if (type === "Payout") amountValue = `+${(50 + (itemSeed % 150))} XLM`;
+  if (type === "Stake") amountValue = `-${(15 + (itemSeed % 45))} XLM`;
+  if (type === "Refund") amountValue = `+${(20 + (itemSeed % 30))} XLM`;
+
+  const computedDay = 29 - index;
+  const deliveryDay = computedDay < 1 ? 1 : computedDay;
+  const dateString = `2026-05-${deliveryDay.toString().padStart(2, '0')}`;
+
+  return {
+    id: `tx-generated-id-${itemSeed}`,
+    date: dateString,
+    type,
+    description,
+    amount: amountValue,
+    status: "Confirmed"
+  };
+});
 
 const TYPE_COLORS: Record<TxType, string> = {
   Stake: "bg-orange-500/20 text-orange-400",
@@ -48,6 +81,11 @@ function truncateAddress(addr: string) {
 export default function WalletPage() {
   const [copied, setCopied] = useState(false);
   const [typeFilter, setTypeFilter] = useState<TxFilter>("All");
+
+  // Dynamically calculate individual card summary strings based on the wallet seed
+  const dynamicAvailable = `${(1000 + (baseSeed % 850) + 0.50).toLocaleString(undefined, { minimumFractionDigits: 2 })} XLM`;
+  const dynamicStaked = `${(50 + (baseSeed % 200)).toFixed(2)} XLM`;
+  const dynamicWinnings = `${(100 + (baseSeed % 500)).toFixed(2)} XLM`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(PLACEHOLDER_ADDRESS).catch(() => {});
@@ -83,9 +121,9 @@ export default function WalletPage() {
       {/* Balance Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
-          { label: "Available Balance", value: "1,240.50 XLM", accent: "text-emerald-400" },
-          { label: "Staked in Predictions", value: "145.00 XLM", accent: "text-orange-400" },
-          { label: "Total Winnings", value: "380.00 XLM", accent: "text-yellow-400" },
+          { label: "Available Balance", value: dynamicAvailable, accent: "text-emerald-400" },
+          { label: "Staked in Predictions", value: dynamicStaked, accent: "text-orange-400" },
+          { label: "Total Winnings", value: dynamicWinnings, accent: "text-yellow-400" },
         ].map((card) => (
           <div key={card.label} className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-1">
             <p className="text-xs text-gray-400">{card.label}</p>
