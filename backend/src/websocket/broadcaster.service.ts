@@ -20,20 +20,23 @@ export class BroadcasterService {
       },
     };
     this.gateway.server.emit('event:created', payload);
-    this.logger.log(`Broadcast event:created → all (event_id=${String(data.event_id)})`);
+    this.logger.log(
+      `Broadcast event:created → all (event_id=${String(data.event_id)})`,
+    );
   }
 
   broadcastEventUpdated(
     eventId: string | number,
     data: Record<string, unknown>,
   ): void {
-    const payload = { event: 'event:updated', data: { event_id: eventId, ...data } };
-    this.gateway.server.to(`event:${eventId}`).emit('event:updated', payload);
-    this.logger.log(`Broadcast event:updated → event:${eventId}`);
+    const id = String(eventId);
+    const payload = { event: 'event:updated', data: { event_id: id, ...data } };
+    this.gateway.server.to(`event:${id}`).emit('event:updated', payload);
+    this.logger.log(`Broadcast event:updated → event:${id}`);
   }
 
   broadcastMatchAdded(data: Record<string, unknown>): void {
-    const eventId = data.event_id;
+    const eventId = String(data.event_id);
     const payload = {
       event: 'match:added',
       data: {
@@ -49,7 +52,7 @@ export class BroadcasterService {
   }
 
   broadcastUserJoined(data: Record<string, unknown>): void {
-    const eventId = data.event_id;
+    const eventId = String(data.event_id);
     const payload = {
       event: 'user:joined',
       data: { event_id: eventId, user_address: data.user_address },
@@ -59,8 +62,8 @@ export class BroadcasterService {
   }
 
   broadcastPredictionSubmitted(data: Record<string, unknown>): void {
-    const matchId = data.match_id;
-    const eventId = data.event_id;
+    const matchId = String(data.match_id);
+    const eventId = String(data.event_id);
     const payload = {
       event: 'prediction:submitted',
       data: {
@@ -71,8 +74,8 @@ export class BroadcasterService {
       },
     };
     const rooms: string[] = [];
-    if (eventId) rooms.push(`event:${eventId}`);
-    if (matchId) rooms.push(`match:${matchId}`);
+    if (data.event_id) rooms.push(`event:${eventId}`);
+    if (data.match_id) rooms.push(`match:${matchId}`);
     for (const room of rooms) {
       this.gateway.server.to(room).emit('prediction:submitted', payload);
     }
@@ -80,8 +83,8 @@ export class BroadcasterService {
   }
 
   broadcastMatchResolved(data: Record<string, unknown>): void {
-    const matchId = data.match_id;
-    const eventId = data.event_id;
+    const matchId = String(data.match_id);
+    const eventId = String(data.event_id);
     const payload = {
       event: 'match:resolved',
       data: {
@@ -92,8 +95,8 @@ export class BroadcasterService {
       },
     };
     const rooms: string[] = [];
-    if (eventId) rooms.push(`event:${eventId}`);
-    if (matchId) rooms.push(`match:${matchId}`);
+    if (data.event_id) rooms.push(`event:${eventId}`);
+    if (data.match_id) rooms.push(`match:${matchId}`);
     for (const room of rooms) {
       this.gateway.server.to(room).emit('match:resolved', payload);
     }
@@ -101,17 +104,19 @@ export class BroadcasterService {
   }
 
   broadcastWinnersVerified(data: Record<string, unknown>): void {
-    const eventId = data.event_id;
+    const eventId = String(data.event_id);
     const payload = {
       event: 'winners:verified',
       data: { event_id: eventId, winners: data.winners },
     };
-    this.gateway.server.to(`event:${eventId}`).emit('winners:verified', payload);
+    this.gateway.server
+      .to(`event:${eventId}`)
+      .emit('winners:verified', payload);
     this.logger.log(`Broadcast winners:verified → event:${eventId}`);
   }
 
   broadcastEventCancelled(data: Record<string, unknown>): void {
-    const eventId = data.event_id;
+    const eventId = String(data.event_id);
     const payload = {
       event: 'event:cancelled',
       data: { event_id: eventId, title: data.title },
