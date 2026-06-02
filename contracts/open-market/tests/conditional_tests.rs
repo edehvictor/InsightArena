@@ -2015,3 +2015,84 @@ fn test_calculate_depth_nested_three_levels() {
     assert_eq!(client.calculate_conditional_depth(&c2), 2);
     assert_eq!(client.calculate_conditional_depth(&c3), 3);
 }
+
+// ── Issue #xxx: Cascading Activation Through Conditional Chain ─────────────────
+
+#[test]
+fn test_cascading_activation_through_full_chain_on_matching_outcomes() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, oracle) = deploy_with_oracle(&env);
+    let creator = Address::generate(&env);
+
+    // Build a 4-level deep chain: root -> c1 -> c2 -> c3
+    let root = client.create_market(&creator, &default_params(&env));
+    let c1 = client.create_conditional_market(
+        &creator,
+        &root,
+        &symbol_short!("yes"),
+        &conditional_params(&env, &client, root),
+    );
+    let c2 = client.create_conditional_market(
+        &creator,
+        &c1,
+        &symbol_short!("yes"),
+        &conditional_params(&env, &client, c1),
+    );
+    let c3 = client.create_conditional_market(
+        &creator,
+        &c2,
+        &symbol_short!("yes"),
+        &conditional_params(&env, &client, c2),
+    );
+
+    // All should start inactive with no activation time
+    assert!(!read_conditional(&env, &client, c1).is_activated);
+    assert!(!read_conditional(&env, &client, c2).is_activated);
+    assert!(!read_conditional(&env, &client, c3).is_activated);
+    assert_eq!(read_conditional(&env, &client, c1).activation_time, None);
+    assert_eq!(read_conditional(&env, &client, c2).activation_time, None);
+    assert_eq!(read_conditional(&env, &client, c3).activation_time, None);
+
+    // Resolve root with "yes" — should activate c1 only
+    set_timestamp(&env, 25_000);
+    client.resolve_market(&oracle, &root, &symbol_short!("yes"));
+
+    assert!(read_conditional(&env, &client, c1).is_activated);
+    assert_eq!(read_conditional(&env, &client, c1).activation_time, Some(25_000));
+    assert!(!read_conditional(&env, &client, c2).is_activated);
+    assert!(!read_conditional(&env, &client, c3).is_activated);
+    assert_eq!(read_conditional(&env, &client, c2).activation_time, None);
+    assert_eq!(read_conditional(&env, &client, c3).activation_time, None);
+
+    // Resolve c1 with "yes" — should activate c2 only
+    set_timestamp(&env, 26_000);
+    client.resolve_market(&oracle, &c1, &symbol_short!("yes"));
+
+    assert!(read_conditional(&env, &client, c2).is_activated);
+    assert_eq!(read_conditional(&env, &client, c2).activation_time, Some(26_000));
+    assert!(!read_conditional(&env, &client, c3).is_activated);
+    assert_eq!(read_conditional(&env, &client, c3).activation_time, None);
+
+    // Resolve c2 with "yes" — should activate c3 only
+    set_timestamp(&env, 27_000);
+    client.resolve_market(&oracle, &c2, &symbol_short!("yes"));
+
+    assert!(read_conditional(&env, &client, c3).is_activated);
+    assert_eq!(read_conditional(&env, &client, c3).activation_time, Some(27_000));
+
+    // Verify all markets are resolved
+    assert!(read_market(&env, &client, root).is_resolved);
+    assert!(read_market(&env, &client, c1).is_resolved);
+    assert!(read_market(&env, &client, c2).is_resolved);
+    assert!(read_market(&env, &client, c3).is_resolved);
+
+    // Verify the chain is correct
+    let chain = client.get_conditional_chain(&c3);
+    assert_eq!(chain.depth, 4);
+    assert_eq!(chain.market_ids.len(), 4);
+    assert_eq!(chain.market_ids.get(0), Some(c3));
+    assert_eq!(chain.market_ids.get(1), Some(c2));
+    assert_eq!(chain.market_ids.get(2), Some(c1));
+    assert_eq!(chain.market_ids.get(3), Some(root));
+}

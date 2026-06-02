@@ -2,41 +2,256 @@
 
 A Soroban smart contract for hosting prediction events with XLM token fees, invite-only access, and AI Oracle result verification.
 
-## Features
+## Table of Contents
 
-- **Creator-hosted Events**: Creators can host their own prediction events
-- **XLM Token Integration**: Entry fees paid in XLM tokens with automatic collection
-- **Invite-only Access**: Optional invite-only events for exclusive participation
-- **AI Oracle Integration**: Results verified through AI Oracle system
-- **Multiple Prediction Options**: Support for multiple prediction choices per event
-- **Event Management**: Full lifecycle management from creation to resolution
-- **Automated Payouts**: Proportional winnings distribution to winners
-- **House Fee Management**: Configurable house fees with treasury management
+- [What is CreatorEventManager?](#what-is-creatoreeventmanager)
+- [Key Features](#key-features)
+- [Use Cases](#use-cases)
+- [Quick Start](#quick-start)
+- [Documentation](#documentation)
+- [Technical Details](#technical-details)
+- [Building & Testing](#building--testing)
+- [Error Handling](#error-handling)
+- [Security Considerations](#security-considerations)
+- [License](#license)
 
-## Token Requirements
+## What is CreatorEventManager?
 
-### XLM Token Address
+CreatorEventManager is a decentralized prediction market platform built on Stellar's Soroban smart contracts. It enables event creators to host prediction events where users can make predictions on various outcomes, with transparent scoring and automated winner verification through AI oracle integration.
+
+The contract handles the complete lifecycle of prediction events:
+
+1. **Event Creation** — Creators set up new events with configurable parameters
+2. **User Participation** — Users join events via invite codes and place predictions on matches
+3. **Result Submission** — The AI oracle agent submits match results
+4. **Winner Verification** — Automatic verification of perfect scorers
+5. **Platform Management** — Admins manage treasury, fees, and platform settings
+
+## Key Features
+
+- **Creator-hosted Events**: Creators can host their own prediction events with customizable titles, descriptions, and participant limits
+- **XLM Token Integration**: Entry fees paid in XLM tokens with automatic collection and fee management
+- **Invite-only Access**: Optional invite-only events for exclusive participation with unique invite codes
+- **AI Oracle Integration**: Results verified through AI Oracle system with automatic winner calculation
+- **Multiple Matches per Event**: Support for multiple matches/predictions within a single event
+- **Event Management**: Full lifecycle management from creation through resolution and winner verification
+- **Automated Winner Verification**: Identifies and records perfect scorers (users who predicted all matches correctly)
+- **Transparent Scoring**: Public leaderboards and prediction distribution tracking
+- **Treasury Management**: Configurable house fees with admin-controlled treasury withdrawals
+- **Emergency Controls**: Admin pause/unpause functionality for security
+
+## Use Cases
+
+### Sports Prediction Events
+
+Event creators can host prediction markets for sports events, allowing fans to predict match outcomes. Perfect for fantasy sports leagues, tournament predictions, or live match betting.
+
+### Crypto Market Predictions
+
+Create prediction events around cryptocurrency market movements, project launches, or blockchain events. Users predict whether prices will go up, down, or stay within ranges.
+
+### Political Events
+
+Host prediction markets for election outcomes, policy decisions, or political events with transparent, decentralized result verification.
+
+### Esports Tournaments
+
+Enable esports enthusiasts to predict tournament winners, match results, or player performances with automated scoring and leaderboards.
+
+### Entertainment & Pop Culture
+
+From award show predictions to entertainment industry events, CreatorEventManager supports any outcome-based prediction scenario.
+
+### Hackathon Competitions
+
+Run prediction events during hackathons to engage participants in side competitions and increase community engagement.
+
+## Quick Start
+
+### Installation
+
+1. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/your-org/InsightArena.git
+   cd InsightArena/contracts/creator-event-manager
+   ```
+
+2. **Install dependencies**
+
+   ```bash
+   # Ensure you have Rust installed
+   rustup update stable
+   rustup target add wasm32-unknown-unknown
+
+   # Verify Soroban CLI is installed
+   soroban --version
+   ```
+
+3. **Install the contract**
+
+   ```bash
+   cargo build --target wasm32-unknown-unknown --release
+   ```
+
+### Build Instructions
+
+Build the contract as a WASM binary:
+
+```bash
+# Build in release mode for production
+cargo build --target wasm32-unknown-unknown --release
+
+# Build with debug information (for development)
+cargo build --target wasm32-unknown-unknown
+
+# The output binary will be at:
+# target/wasm32-unknown-unknown/release/creator_event_manager.wasm
+```
+
+### Deploy to Testnet
+
+1. **Set up your Soroban environment**
+
+   ```bash
+   # Initialize Soroban CLI with your account
+   soroban config identity create my-account --public-key <YOUR_PUBLIC_KEY>
+   soroban config network add testnet \
+     --rpc-url https://soroban-testnet.stellar.org \
+     --network-passphrase "Test SDF Network ; September 2015"
+   ```
+
+2. **Deploy the contract**
+
+   ```bash
+   soroban contract deploy \
+     --wasm target/wasm32-unknown-unknown/release/creator_event_manager.wasm \
+     --source my-account \
+     --network testnet
+   ```
+
+   This will output your contract address (starting with `C`).
+
+3. **Initialize the contract**
+
+   ```bash
+   soroban contract invoke \
+     --id <YOUR_CONTRACT_ID> \
+     --source my-account \
+     --network testnet \
+     -- initialize \
+     --admin <ADMIN_ADDRESS> \
+     --ai_agent <AI_AGENT_ADDRESS> \
+     --treasury <TREASURY_ADDRESS> \
+     --xlm_token <XLM_TOKEN_ADDRESS> \
+     --initial_creation_fee 1000000
+   ```
+
+   Replace the addresses with your own addresses and XLM token address (typically `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQAHHAGCN6AU` on testnet).
+
+### Basic Usage Example
+
+```rust
+use soroban_sdk::Address;
+
+// 1. Create an event
+let (event_id, invite_code) = client.create_event(
+    &creator,
+    &String::from_small("World Cup Predictions"),
+    &String::from_small("Predict all 8 matches from the World Cup finals"),
+    &100u32, // max 100 participants
+);
+
+// 2. Create matches within the event
+let match_id_1 = client.create_match(
+    &creator,
+    &event_id,
+    &String::from_small("Argentina"),
+    &String::from_small("France"),
+    &1640000000u64, // Unix timestamp
+);
+
+// 3. Users join the event with invite code
+client.join_event(&user1, &invite_code);
+
+// 4. Users submit predictions
+let prediction_id = client.submit_prediction(
+    &user1,
+    &match_id_1,
+    &Symbol::short("TEAM_A"), // Predicting Argentina wins
+);
+
+// 5. Oracle agent submits result
+client.submit_match_result(
+    &ai_agent,
+    &match_id_1,
+    &Symbol::short("TEAM_A"), // Argentina won
+);
+
+// 6. Verify winners after all matches are resolved
+let winner_count = client.verify_event_winners(&admin, &event_id);
+
+// 7. Query winners and scores
+let winners = client.get_event_winners(&event_id);
+let (correct_count, total_matches) = client.get_user_score(&user1, &event_id);
+```
+
+## Documentation
+
+For detailed information about the contract, refer to these documentation files:
+
+### [API Reference](./API_REFERENCE.md)
+
+Complete API documentation for all contract functions, including parameters, return values, and error conditions.
+
+### [Architecture Guide](./ARCHITECTURE.md)
+
+Detailed explanation of the contract architecture, data structures, and internal modules.
+
+### [Integration Guide](./INTEGRATION.md)
+
+Step-by-step guide for integrating CreatorEventManager into your application, including SDK examples and best practices.
+
+### [Testing Guide](./TESTING.md)
+
+Comprehensive testing documentation covering unit tests, integration tests, and how to write your own tests.
+
+### [Deployment Guide](./DEPLOYMENT.md)
+
+Production deployment checklist, network configuration, and monitoring setup.
+
+### [User Guide](./USER_GUIDE.md)
+
+End-user guide with common workflows and examples for event creators and participants.
+
+## Technical Details
+
+### XLM Token Configuration
+
 The contract must be initialized with a valid XLM token contract address. This address is used for all token operations including:
+
 - Entry fee collection from users
 - Winnings distribution to winners
 - House fee management
 
 ### Token Authorization
+
 Users must approve the contract to spend tokens on their behalf before placing predictions:
+
 ```rust
 token_client.approve(&user_address, &contract_address, &amount, &expiration_ledger);
 ```
 
 ### Balance Requirements
+
 - Users must have sufficient XLM balance to cover entry fees
 - The contract automatically validates balances before processing transactions
 - Failed transactions due to insufficient funds will revert with appropriate error messages
 
-## Contract Structure
-
 ### Core Data Types
 
-#### New Optimized Event Struct (`storage_types::Event`)
+#### Event Struct (`storage_types::Event`)
+
 - `event_id: u64` - Unique identifier for the event
 - `creator: Address` - Address of the event creator
 - `name: String` - Display name/title of the prediction event
@@ -48,6 +263,7 @@ token_client.approve(&user_address, &contract_address, &amount, &expiration_ledg
 - `total_matches: u32` - Number of prediction options available
 
 #### Match Struct (`storage_types::Match`)
+
 - `match_id: u64` - Unique identifier for the match
 - `event_id: u64` - ID of the parent event this match belongs to
 - `team_a: String` - Name/identifier of the first team or option
@@ -58,175 +274,22 @@ token_client.approve(&user_address, &contract_address, &amount, &expiration_ledg
 - `result_timestamp: Option<u64>` - When the result was submitted
 
 #### Match Result Encoding
-- **0** = Team A Wins (`team_a` field)
-- **1** = Team B Wins (`team_b` field)  
+
+- **0** = Team A Wins
+- **1** = Team B Wins
 - **2** = Draw/Tie
 - **None** = No result submitted yet
 
-#### Event Metadata (`storage_types::EventMetadata`)
-- `category: String` - Event category (Sports, Crypto, Politics, etc.)
-- `tags: String` - Comma-separated tags for discovery
-- `min_participants: u32` - Minimum participants required
-- `max_participants: u32` - Maximum participants allowed
-- `end_time: u64` - When predictions close
-- `resolution_time: u64` - When results are determined
-- `is_invite_only: bool` - Whether event is invite-only
-- `creator_reputation: u32` - Creator's reputation score
+#### Prediction Struct (`storage_types::Prediction`)
 
-#### Legacy Support
-- `LegacyEvent` - Backward compatible event structure
-- `PredictionOption` - Individual prediction choices within an event
-- `UserPrediction` - User's prediction and stake information
-- `LegacyEventStatus` - Event lifecycle status (Active, Resolved, Cancelled)
+- `prediction_id: u64` - Unique identifier for the prediction
+- `match_id: u64` - ID of the match being predicted
+- `predictor: Address` - Address of the user making the prediction
+- `predicted_outcome: Symbol` - The predicted outcome (TEAM_A, TEAM_B, or DRAW)
+- `predicted_at: u64` - Timestamp when prediction was submitted
+- `is_correct: bool` - Whether the prediction was correct (set after match resolution)
 
-### Main Functions
-
-#### `initialize(token_address, house_fee_percentage)`
-Initialize the contract with XLM token configuration:
-- `token_address`: Address of the XLM token contract
-- `house_fee_percentage`: House fee percentage (0-20%)
-
-#### New Optimized Functions
-
-#### `create_new_event()`
-Create a new event using the optimized Event struct:
-- `creator`: Event creator address
-- `name`: Display name of the event
-- `description`: Detailed description of the event
-- `creation_fee`: Entry fee in XLM stroops
-- `total_matches`: Number of prediction options available
-
-#### `get_new_event(event_id)`
-Get event details using the new Event struct format.
-
-#### `update_event_status(creator, event_id, is_active)`
-Update event active status (creator only).
-
-#### `add_event_participant(event_id)`
-Add a participant to an event (increments counter).
-
-#### `get_event_stats(event_id)`
-Get event statistics: `(participants, prize_pool, age_seconds)`.
-
-#### `create_event_metadata()` / `get_event_metadata()`
-Manage extended event metadata including categories, tags, timing, and constraints.
-
-#### Match Management Functions
-
-#### `create_match(creator, event_id, team_a, team_b, match_time)`
-Create a new match within an event:
-- `creator`: Event creator (must own the event)
-- `event_id`: ID of the parent event
-- `team_a`: Name of the first team/option
-- `team_b`: Name of the second team/option
-- `match_time`: Scheduled match time (Unix timestamp)
-
-#### `get_match(match_id)` / `get_event_matches(event_id)`
-Retrieve match details or all matches for an event.
-
-#### `submit_match_result(creator, match_id, winning_team)`
-Submit result for a match (creator only):
-- `winning_team`: 0 for Team A, 1 for Team B, 2 for Draw
-
-#### `match_allows_predictions(match_id, cutoff_minutes)`
-Check if match still allows predictions based on timing.
-
-#### `get_match_stats(match_id)`
-Get match statistics: `(has_started, result_submitted, time_until_start, time_since_result)`.
-
-#### `get_match_count()` / `validate_match(match_id)`
-Get total match count and validate match data consistency.
-
-#### `get_event_participants(event_id)`
-Return the full `Vec<Address>` of users who have joined an event. Newly created events return an empty vector, and unknown event IDs fail with `event_not_found`.
-
-#### `join_event(user, invite_code)`
-Join an event using its invite code before submitting predictions.
-
-#### `submit_prediction(predictor, match_id, predicted_outcome)`
-Submit a TEAM_A, TEAM_B, or DRAW prediction for a match.
-
-#### `get_prediction(prediction_id)`
-Fetch a stored prediction by ID for display or verification.
-
-#### Legacy Functions (Backward Compatibility)
-#### `create_event()` (Legacy)
-Create a new prediction event with the following parameters:
-- `creator`: Event creator address
-- `title`: Event title
-- `description`: Event description
-- `entry_fee`: Required XLM fee to participate
-- `end_time`: Event end timestamp
-- `options`: List of prediction options
-- `invited_users`: List of invited users (for invite-only events)
-- `is_invite_only`: Whether the event is invite-only
-
-#### `place_prediction()`
-Place a prediction on an active event:
-- `user`: User placing the prediction
-- `event_id`: Target event ID
-- `option_id`: Selected prediction option
-- `stake_amount`: Stake amount (must match entry fee)
-
-**Note**: Users must approve the contract to spend tokens before calling this function.
-
-#### `resolve_event()`
-Resolve an event with the winning option (creator only):
-- `creator`: Event creator (must match)
-- `event_id`: Event to resolve
-- `winning_option_id`: ID of the winning option
-
-#### `distribute_winnings()`
-Distribute winnings to participants after event resolution (creator only):
-- `creator`: Event creator (must match)
-- `event_id`: Event to distribute winnings for
-
-Winnings are calculated proportionally based on stake amounts and total pool, minus house fees.
-
-#### Token Management Functions
-- `get_contract_balance()`: Get contract's XLM balance
-- `get_user_balance(user)`: Get user's XLM balance
-- `withdraw_house_fees(admin, amount)`: Withdraw accumulated house fees
-- `get_token_address()`: Get the configured XLM token address
-- `get_house_fee_percentage()`: Get the house fee percentage
-
-#### Query Functions
-- `get_event()`: Get event details by ID
-- `get_user_prediction()`: Get user's prediction for an event
-- `get_event_count()`: Get total number of events created
-- `get_event_participants()`: Get list of event participants
-
-## Usage Example
-
-```rust
-// Initialize contract with XLM token
-let xlm_token_address = Address::from_string("CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQAHHAGCN6AU");
-let house_fee = 5u32; // 5%
-client.initialize(&xlm_token_address, &house_fee);
-
-// Create event
-let event_id = client.create_new_event(&creator, &name, &description, &1000000i128, &2u32);
-
-// Create matches within the event
-let match_id1 = client.create_match(&creator, &event_id, &team_a1, &team_b1, &match_time1);
-let match_id2 = client.create_match(&creator, &event_id, &team_a2, &team_b2, &match_time2);
-
-// User approves contract to spend tokens
-token_client.approve(&user, &contract_address, &1000i128, &expiration_ledger);
-
-// User places prediction on a specific match
-client.place_prediction(&user, &event_id, &option_id, &1000i128);
-
-// Creator submits match results
-client.submit_match_result(&creator, &match_id1, &0u32); // Team A wins
-client.submit_match_result(&creator, &match_id2, &2u32); // Draw
-
-// Creator resolves event and distributes winnings
-client.resolve_event(&creator, &event_id, &winning_option_id);
-client.distribute_winnings(&creator, &event_id);
-```
-
-## Winnings Calculation
+### Winnings Calculation
 
 Winnings are distributed proportionally among winners:
 
@@ -235,7 +298,8 @@ Winnings are distributed proportionally among winners:
 3. **Distributable Pool**: Total pool minus house fee
 4. **Individual Winnings**: `(user_stake * distributable_pool) / winning_option_total_stake`
 
-### Example
+**Example**:
+
 - Total pool: 1000 XLM
 - House fee: 5% (50 XLM)
 - Distributable: 950 XLM
@@ -243,13 +307,21 @@ Winnings are distributed proportionally among winners:
 - User stake: 100 XLM
 - User winnings: `(100 * 950) / 400 = 237.5 XLM`
 
-## Building
+## Building & Testing
+
+### Build
+
+Build the contract as a WASM binary for production:
 
 ```bash
 cargo build --target wasm32-unknown-unknown --release
 ```
 
-## Testing
+The output binary will be at: `target/wasm32-unknown-unknown/release/creator_event_manager.wasm`
+
+### Test
+
+Run the test suite:
 
 ```bash
 cargo test
@@ -257,45 +329,38 @@ cargo test
 
 ## Error Handling
 
-The contract includes comprehensive error handling for token operations:
+The contract includes comprehensive error handling:
 
-- **InsufficientBalance**: User or contract lacks sufficient tokens
-- **TransferFailed**: Token transfer operation failed
-- **UnauthorizedTransfer**: User hasn't approved contract for token spending
-- **InvalidTokenAddress**: Provided token address is invalid
+- **contract_paused** - Contract is currently paused by admin
+- **unauthorized** - Caller lacks required permissions
+- **invalid_address** - Provided address is invalid or equals contract
+- **event_not_found** - Referenced event does not exist
+- **match_not_found** - Referenced match does not exist
+- **prediction_not_found** - Referenced prediction does not exist
+- **insufficient_balance** - Insufficient XLM token balance
+- **transfer_failed** - Token transfer operation failed
+- **invalid_invite_code** - Invite code is invalid or expired
+- **already_joined** - User has already joined this event
+- **event_full** - Event has reached maximum participants
+- **match_started** - Cannot place prediction after match has started
+- **invalid_outcome** - Prediction outcome is not valid
+- **result_already_submitted** - Result has already been submitted for this match
+- **matches_not_complete** - Not all matches have been resolved
 
-All token operations are wrapped with proper error handling and will revert transactions on failure.
+All error conditions are handled with clear panic messages for debugging.
 
 ## Security Considerations
 
 - All state-changing functions require proper authentication
-- Event creators have exclusive rights to resolve their events
-- Invite-only events enforce access control
-- Duplicate predictions are prevented
-- Time-based validation ensures events cannot be modified after end time
+- Event creators have exclusive rights to manage their events
+- Invite-only events enforce access control via invite codes
+- Duplicate predictions are prevented automatically
+- Time-based validation ensures events cannot be modified after start
+- Emergency pause functionality allows admins to halt operations
+- Treasury management is restricted to admin addresses
+- AI oracle results can only be submitted by authorized agents
+- All XLM transfers are validated and wrapped with error handling
 
 ## License
 
 This project is licensed under the MIT License.
-## Deployment
-
-The contract can be deployed to Stellar networks using the Soroban CLI:
-
-```bash
-soroban contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/creator_event_manager.wasm \
-  --source <SOURCE_ACCOUNT> \
-  --network <NETWORK>
-```
-
-After deployment, initialize the contract with the XLM token address:
-
-```bash
-soroban contract invoke \
-  --id <CONTRACT_ID> \
-  --source <SOURCE_ACCOUNT> \
-  --network <NETWORK> \
-  -- initialize \
-  --token_address <XLM_TOKEN_ADDRESS> \
-  --house_fee_percentage 5
-```
