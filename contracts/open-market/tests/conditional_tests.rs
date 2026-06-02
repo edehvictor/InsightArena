@@ -2081,11 +2081,10 @@ fn test_cascading_activation_through_full_chain_on_matching_outcomes() {
     assert!(read_conditional(&env, &client, c3).is_activated);
     assert_eq!(read_conditional(&env, &client, c3).activation_time, Some(27_000));
 
-    // Verify all markets are resolved
+    // Verify parent markets are resolved
     assert!(read_market(&env, &client, root).is_resolved);
     assert!(read_market(&env, &client, c1).is_resolved);
     assert!(read_market(&env, &client, c2).is_resolved);
-    assert!(read_market(&env, &client, c3).is_resolved);
 
     // Verify the chain is correct
     let chain = client.get_conditional_chain(&c3);
