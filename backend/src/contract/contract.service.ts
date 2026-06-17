@@ -23,6 +23,12 @@ export interface ContractEvent {
   maxParticipants: number;
   participantCount: number;
   isActive: boolean;
+  prizePool?: string;
+  rewardDistribution?: number[];
+  entryFee?: string;
+  category?: string;
+  bannerUrl?: string | null;
+  isFinalized?: boolean;
 }
 
 export interface ContractMatch {
