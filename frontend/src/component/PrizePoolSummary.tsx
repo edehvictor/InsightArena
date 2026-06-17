@@ -36,22 +36,28 @@ export default function PrizePoolSummary({
       </div>
 
       <div className="mt-4 space-y-2">
-        {rewardBreakdown.map((reward) => (
-          <div
-            key={reward.label}
-            className="flex items-center justify-between rounded-xl border border-white/10 bg-black/10 px-3 py-2 text-sm"
-          >
-            <span className="text-gray-300">
-              {reward.label}
-              {typeof reward.percentage === "number" ? (
-                <span className="text-gray-500"> · {reward.percentage}%</span>
-              ) : null}
-            </span>
-            <span className="font-semibold text-white">
-              {formatXlm(reward.amountXlm)}
-            </span>
-          </div>
-        ))}
+        {rewardBreakdown.length > 0 ? (
+          rewardBreakdown.map((reward) => (
+            <div
+              key={reward.label}
+              className="flex items-center justify-between rounded-xl border border-white/10 bg-black/10 px-3 py-2 text-sm"
+            >
+              <span className="text-gray-300">
+                {reward.label}
+                {typeof reward.percentage === "number" ? (
+                  <span className="text-gray-500"> · {reward.percentage}%</span>
+                ) : null}
+              </span>
+              <span className="font-semibold text-white">
+                {formatXlm(reward.amountXlm)}
+              </span>
+            </div>
+          ))
+        ) : (
+          <p className="rounded-xl border border-white/10 bg-black/10 px-3 py-2 text-sm text-gray-400">
+            Reward distribution will be available after prizes are configured.
+          </p>
+        )}
       </div>
     </section>
   );
